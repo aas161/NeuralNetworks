@@ -1,8 +1,8 @@
 import random
-
 import torch
-
 from torch.autograd import Variable
+import torch.optim as optim
+
 
 
 def chunks(n, *args):
@@ -19,14 +19,15 @@ def chunks(n, *args):
 
 
 class Wrapper:
-    def __init__(self, model, cuda=True, epochs=1000, batchsize=1024):
+    def __init__(self, model, cuda=True, epochs=5, batchsize=1024):
         self.batchsize = batchsize
         self.epochs = epochs
         self.cuda = cuda
         self.model = model
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)  # Оптимизатор
+
         if cuda:
             self.model.cuda()
-        # TODO: добавьте оптимизатор
 
     def fit(self, *args):
         self.model.train()
@@ -39,11 +40,16 @@ class Wrapper:
                 if self.cuda:
                     datas = [data.cuda() for data in datas]
 
-                    # TODO: вычислите логиты модели и градиенты от datas
-                    # datas = [pij, i, j]
-                    # pij - значения сходства между точками данных
-                    # i, j - индексы точек
+                pij, i, j = datas  # Разделяем входные данные
+                self.optimizer.zero_grad()  # Обнуляем градиенты
+
+                # Вычисляем логиты и градиенты
+                loss = self.model(pij, i, j)  # Вызываем модель
+                loss.backward()  # Обратное распространение ошибки
+                self.optimizer.step()  # Обновление весов
+
+                total += loss.item()  # Суммируем потери
 
             msg = "Train Epoch: {} \tLoss: {:.6e}"
-            msg = msg.format(epoch, total / (len(args[0]) * 1.0))
+            msg = msg.format(epoch + 1, total / (len(args[0]) * 1.0))
             print(msg)
