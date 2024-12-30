@@ -53,7 +53,7 @@ def calc_features(data, draw: bool = True):
             # Расстояние между вертикальными границами губ
             mouth_distance = np.sqrt((sample.landmarks[51][0] - sample.landmarks[57][0]) ** 2 +
                                    (sample.landmarks[51][1] - sample.landmarks[57][1]) ** 2)
-
+            # Расстояние между точками на глазах и границами губ
             eye_mouth_distance = np.sqrt((sample.landmarks[36][0] - sample.landmarks[48][0]) ** 2 +
                                           (sample.landmarks[45][1] - sample.landmarks[54][1]) ** 2)
 
@@ -71,8 +71,6 @@ def calc_features(data, draw: bool = True):
     print("targets count:", len(targets))
     x = np.asarray(feat, dtype=np.float32)
     print("features array shape:", x.shape)
-    print(x[111])
-    print(targets[111])
     return np.asarray(feat, dtype=np.float32), np.asarray(targets, dtype=np.float32)
 
 def draw(points2D, targets, save=False):
@@ -93,16 +91,12 @@ def run_tsne(feat, targets, pca_dim=50, tsne_dim=2):
         feat = PCA(n_components=pca_dim).fit_transform(feat)
 
     distances2 = pairwise_distances(feat, metric="euclidean", squared=True)
-    print("distances2", distances2.shape)
-    # This return n x (n-1) prob array
-    pij = manifold._t_sne._joint_probabilities(distances2, 30, False)
-    print("pij", pij.shape)
+    # Вычисление условных вероятностей, отражающих сходство точек
+    pij = manifold._t_sne._joint_probabilities(distances2, 50, False)
     # Convert to n x n prob array
     pij = squareform(pij)
-    print("pij", pij.shape)
 
     i, j = np.indices(pij.shape)
-    print("i", i)
     i, j = i.ravel(), j.ravel()
     pij = pij.ravel().astype("float32")
     # Remove self-indices
@@ -110,14 +104,18 @@ def run_tsne(feat, targets, pca_dim=50, tsne_dim=2):
     i, j, pij = i[idx], j[idx], pij[idx]
 
     model = torchTSNE(n_points=feat.shape[0], n_dim=tsne_dim)
-    w = Wrapper(model, cuda=False, batchsize=feat.shape[0], epochs=30)
+    w = Wrapper(model, cuda=False, batchsize=feat.shape[0], epochs=200)
 
-    for itr in range(5):
+    for itr in range(1):
         w.fit(pij, i, j)
         # Visualize the results
         embed = model.logits.weight.cpu().data.numpy()
         draw(embed, targets)
 
+def run_pca(feat, targets, pca_dim=2):
+    pca = PCA(n_components=pca_dim)
+    reduced_feat = pca.fit_transform(feat)
+    draw(reduced_feat, targets, save=False)
 
 if __name__ == "__main__":
     # dataset dir
@@ -145,3 +143,6 @@ if __name__ == "__main__":
 
     # run t-SNE
     run_tsne(feat, targets, pca_dim=0)
+
+    # run PCA
+    run_pca(feat, targets, pca_dim=2)
