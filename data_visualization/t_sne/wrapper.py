@@ -2,8 +2,7 @@ import random
 import torch
 from torch.autograd import Variable
 import torch.optim as optim
-
-
+import matplotlib.pyplot as plt
 
 def chunks(n, *args):
     """Yield successive n-sized chunks from l."""
@@ -17,7 +16,6 @@ def chunks(n, *args):
     for start, stop in endpoints:
         yield [a[start:stop] for a in args]
 
-
 class Wrapper:
     def __init__(self, model, cuda=True, epochs=5, batchsize=1024):
         self.batchsize = batchsize
@@ -28,6 +26,8 @@ class Wrapper:
 
         if cuda:
             self.model.cuda()
+
+        self.losses = []  # Список для хранения потерь
 
     def fit(self, *args):
         self.model.train()
@@ -50,6 +50,18 @@ class Wrapper:
 
                 total += loss.item()  # Суммируем потери
 
+            # Сохраняем среднее значение потерь за эпоху
+            avg_loss = total / (len(args[0]) * 1.0)
+            self.losses.append(avg_loss)
+
             msg = "Train Epoch: {} \tLoss: {:.6e}"
-            msg = msg.format(epoch + 1, total / (len(args[0]) * 1.0))
+            msg = msg.format(epoch + 1, avg_loss)
             print(msg)
+
+        # Построение графика потерь
+        plt.plot(range(1, self.epochs + 1), self.losses)
+        plt.xlabel('Epochs')
+        plt.ylabel('Kullback–Leibler Loss')
+        plt.title('График изменения потерь')
+        plt.grid()
+        plt.show()

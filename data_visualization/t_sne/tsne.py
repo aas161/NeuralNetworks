@@ -16,15 +16,15 @@ class TSNE(nn.Module):
         z_i = z[i]
         z_j = z[j]
 
-        # Вычисляем евклидово расстояние между точками
-        distances = F.pairwise_distance(z_i, z_j) ** 2  # Квадрат расстояния
+        # Вычисляем евклидово расстояние между всеми точками
+        distances = F.pairwise_distance(z_i, z_j) ** 2
 
-        # Вычисляем матрицу сходства
-        qij = 1 / (1 + distances)  # t-SNE формула для q_ij
-        qij = qij / qij.sum()  # Нормируем
+        # Совместные вероятности в пространстве отображения
+        qij = 1 / (1 + distances)
+        qij = qij / qij.sum()
 
-        # Вычисляем потери Кульбака-Лейблера
-        loss_kld = F.kl_div(torch.log(qij + 1e-10), pij, reduction='sum')  # Добавляем маленькое значение для предотвращения логарифмирования нуля
+        # Вычисляем расстояние Кульбака-Лейблера
+        loss_kld = F.kl_div(torch.log(qij + 1e-10), pij, reduction='sum')
 
         return loss_kld
 
