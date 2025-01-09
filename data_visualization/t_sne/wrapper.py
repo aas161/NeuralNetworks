@@ -52,14 +52,15 @@ class Wrapper:
             # Ранняя остановка после 10 эпох без улучшений потерь
             if self.no_improvement_epochs >= 10:
                 print("Early stopping triggered")
+                self.plot_losses(epoch+1)
                 break
 
         time_end = time.time()
         print(f"Training time: {time_end - time_start:.2f} s")
 
-    def plot_losses(self):
+    def plot_losses(self, epoch):
         # Построение графика потерь
-        plt.plot(range(1, self.epochs + 1), self.losses)
+        plt.plot(range(1, epoch+1), self.losses)
         plt.xlabel('Epochs')
         plt.ylabel('Kullback–Leibler Loss')
         plt.grid()
@@ -67,8 +68,8 @@ class Wrapper:
 
     def draw(self, points2D, targets, save=False):
         # Визуализация точек
-        fig, ax = plt.subplots(figsize=(10, 8))
-        scatter = ax.scatter(points2D[:, 0], points2D[:, 1], c=targets, cmap='Set1', s=40)
+        fig, ax = plt.subplots(figsize=(12, 10))
+        scatter = ax.scatter(points2D[:, 0], points2D[:, 1], c=targets, cmap='Set1', s=20)
         legend = ax.legend(*scatter.legend_elements(), loc="upper right")
         ax.add_artist(legend)
         if save:

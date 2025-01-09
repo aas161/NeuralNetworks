@@ -85,7 +85,7 @@ def run_tsne(feat, targets, pca_dim=50, tsne_dim=2):
     distances2 = pairwise_distances(feat, metric="euclidean", squared=True)
 
     # Вычисление P-распределения
-    pij = manifold._t_sne._joint_probabilities(distances2, 50, False)
+    pij = manifold._t_sne._joint_probabilities(distances2, 100, False)
     pij = squareform(pij)
 
     # Подготовка индексов и вероятностей
@@ -102,11 +102,11 @@ def run_tsne(feat, targets, pca_dim=50, tsne_dim=2):
     pij = torch.from_numpy(pij)
 
     # Обучение модели
-    epochs = 300
+    epochs = 250
     model = torchTSNE(n_points=feat.shape[0], n_dim=tsne_dim)
     w = Wrapper(model, batchsize=feat.shape[0], targets=targets, epochs=epochs)
     w.fit(pij, i, j)
-    w.plot_losses()
+    w.plot_losses(epochs)
 
 if __name__ == "__main__":
     # Путь до датасета
