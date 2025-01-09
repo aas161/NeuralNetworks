@@ -1,6 +1,5 @@
 from torch import nn
 import torch
-import torch.nn.functional as F
 
 
 class TSNE(nn.Module):
@@ -8,25 +7,32 @@ class TSNE(nn.Module):
         super().__init__()
         self.n_points = n_points
         self.n_dim = n_dim
+
+        # Инициализация эмбеддингов с малыми случайными значениями
         self.logits = nn.Embedding(n_points, n_dim)
+        self.logits.weight.data.normal_(0, 1e-4)
 
     def forward(self, pij, i, j):
-        # Получаем логиты
+        # Получаем эмбеддинги
         z = self.logits.weight
         z_i = z[i]
         z_j = z[j]
 
-        # Вычисляем евклидово расстояние между всеми точками
-        distances = F.pairwise_distance(z_i, z_j) ** 2
+        # Вычисляем попарные расстояния
+        distances = torch.sum((z_i - z_j) ** 2, dim=1)
 
-        # Совместные вероятности в пространстве отображения
-        qij = 1 / (1 + distances)
-        qij = qij / qij.sum()
+        # Вычисляем Q-распределение (t-распределение Стьюдента)
+        eps = 1e-12
+        q = 1. / (1. + distances)
 
-        # Вычисляем расстояние Кульбака-Лейблера
-        loss_kld = F.kl_div(torch.log(qij + 1e-10), pij, reduction='sum')
+        # Нормализация Q-распределения
+        q = q / torch.sum(q)
 
-        return loss_kld
+        # Вычисляем KL-дивергенцию
+        # KL(P||Q) = Σ p_i * (log(p_i) - log(q_i))
+        loss = torch.sum(pij * (torch.log(pij + eps) - torch.log(q + eps)))
+
+        return loss
 
     def __call__(self, *args):
         return self.forward(*args)
