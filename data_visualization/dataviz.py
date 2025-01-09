@@ -5,7 +5,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 from scipy.spatial.distance import squareform
 from sklearn import manifold
 from sklearn.decomposition import PCA
@@ -115,11 +114,11 @@ if __name__ == "__main__":
         train_dataset_root = base_dir / "Ryerson/Video"
         train_file_list = base_dir / "Ryerson/train_data_with_landmarks.txt"
     elif 0:
-        train_dataset_root = base_dir / "/AFEW-VA/crop"
-        train_file_list = base_dir / "AFEW-VA/crop/train_data_with_landmarks.txt"
+        train_dataset_root = base_dir / "AFEW-VA/crop"
+        train_file_list = base_dir / "AFEW-VA/train_data_with_landmarks.txt"
     elif 0:
-        train_dataset_root = base_dir / "OMGEmotionChallenge-master/omg_TrainVideos/preproc/frames"
-        train_file_list = base_dir / "/OMGEmotionChallenge-master/omg_TrainVideos/preproc/train_data_with_landmarks.txt"
+        train_dataset_root = base_dir / "OMGEmotionChallenge/omg_TrainVideos/frames"
+        train_file_list = base_dir / "OMGEmotionChallenge/omg_TrainVideos/train_data_with_landmarks.txt"
 
     # Загрузка данных
     data = get_data(train_dataset_root, train_file_list, max_num_clips=0)
