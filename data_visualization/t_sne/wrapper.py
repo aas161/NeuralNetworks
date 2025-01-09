@@ -1,67 +1,80 @@
-import random
 import torch
-from torch.autograd import Variable
 import torch.optim as optim
 import matplotlib.pyplot as plt
-
-def chunks(n, *args):
-    """Yield successive n-sized chunks from l."""
-    endpoints = []
-    start = 0
-    for stop in range(0, len(args[0]), n):
-        if stop - start > 0:
-            endpoints.append((start, stop))
-            start = stop
-    random.shuffle(endpoints)
-    for start, stop in endpoints:
-        yield [a[start:stop] for a in args]
+import time
 
 class Wrapper:
-    def __init__(self, model, cuda=True, epochs=5, batchsize=1024):
+    def __init__(self, model, batchsize, targets, epochs):
         self.batchsize = batchsize
         self.epochs = epochs
-        self.cuda = cuda
+        self.targets = targets
         self.model = model
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)  # Оптимизатор
+        self.optimizer = optim.Adam(self.model.parameters(), lr=5)
+        self.losses = []
+        self.best_loss = float('inf')
+        self.no_improvement_epochs = 0
+        self.lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=5)
 
-        if cuda:
-            self.model.cuda()
-
-        self.losses = []  # Список для хранения потерь
-
-    def fit(self, *args):
+    def fit(self, pij, i, j):
         self.model.train()
-        if self.cuda:
-            self.model.cuda()
+        time_start = time.time()
+
         for epoch in range(self.epochs):
-            total = 0.0
-            for itr, datas in enumerate(chunks(self.batchsize, *args)):
-                datas = [Variable(torch.from_numpy(data)) for data in datas]
-                if self.cuda:
-                    datas = [data.cuda() for data in datas]
+            self.optimizer.zero_grad()
 
-                pij, i, j = datas  # Разделяем входные данные
-                self.optimizer.zero_grad()  # Обнуляем градиенты
+            # Вычисление потерь и обновление весов
+            loss = self.model(pij, i, j)
+            loss.backward()
 
-                # Вычисляем логиты и градиенты
-                loss = self.model(pij, i, j)  # Вызываем модель
-                loss.backward()  # Обратное распространение ошибки
-                self.optimizer.step()  # Обновление весов
+            # Ограничение градиентов для стабильности обучения
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=4.0)
 
-                total += loss.item()  # Суммируем потери
+            self.optimizer.step()
+            self.losses.append(loss.item())
 
-            # Сохраняем среднее значение потерь за эпоху
-            avg_loss = total / (len(args[0]) * 1.0)
-            self.losses.append(avg_loss)
+            print(f"Train Epoch: {epoch + 1} \tLoss: {loss.item():.6e} \tLearning Rate: {self.optimizer.param_groups[0]['lr']:.6e}")
 
-            msg = "Train Epoch: {} \tLoss: {:.6e}"
-            msg = msg.format(epoch + 1, avg_loss)
-            print(msg)
+            # Визуализация распределения в двумерном пространстве
+            if epoch % 5 == 0:
+                embed = self.model.logits.weight.cpu().data.numpy()
+                self.draw(embed, self.targets)
 
+            # Проверка улучшения потерь
+            if loss.item() < self.best_loss:
+                self.best_loss = loss.item()
+                self.no_improvement_epochs = 0
+            else:
+                self.no_improvement_epochs += 1
+
+            # Уменьшение скорости обучения
+            self.lr_scheduler.step(loss)
+
+            # Ранняя остановка после 10 эпох без улучшений потерь
+            if self.no_improvement_epochs >= 10:
+                print("Early stopping triggered")
+                break
+
+        time_end = time.time()
+        print(f"Training time: {time_end - time_start:.2f} s")
+
+    def plot_losses(self):
         # Построение графика потерь
         plt.plot(range(1, self.epochs + 1), self.losses)
         plt.xlabel('Epochs')
         plt.ylabel('Kullback–Leibler Loss')
-        plt.title('График изменения потерь')
         plt.grid()
         plt.show()
+
+    def draw(self, points2D, targets, save=False):
+        # Визуализация точек
+        fig, ax = plt.subplots(figsize=(10, 8))
+        scatter = ax.scatter(points2D[:, 0], points2D[:, 1], c=targets, cmap='Set1', s=40)
+        legend = ax.legend(*scatter.legend_elements(), loc="upper right")
+        ax.add_artist(legend)
+        if save:
+            plt.savefig("scatter.png", bbox_inches="tight")
+            plt.close(fig)
+        else:
+            plt.show()
+            plt.pause(5)
+            plt.close(fig)
