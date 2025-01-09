@@ -1,15 +1,11 @@
 import matplotlib
-
 matplotlib.use("Agg")
 import itertools
-
 from collections import Counter
-
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
-
 from sklearn.metrics import classification_report, confusion_matrix
 
 
@@ -26,13 +22,9 @@ class Accuracy:
         self.target_clips = np.asarray(self.target_clips, dtype=np.int32)
         self.target_names = sorted([str(int(l)) for l in Counter(self.target_all).keys()])
 
-    def plot_confusion_matrix(
-        self, cm, classes, normalize=False, title="Confusion matrix", cmap=plt.cm.Blues
-    ):
+    def plot_confusion_matrix(self, cm, classes, normalize=False, title="Confusion matrix", cmap=plt.cm.Blues):
         """This function prints and plots the confusion matrix.
-
         Normalization can be applied by setting `normalize=True`.
-
         """
         if normalize:
             cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]

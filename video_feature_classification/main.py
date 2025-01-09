@@ -1,18 +1,12 @@
 import sys
-
 sys.path.append("../")
-
 import os
 import pickle
 import random
-
 from pathlib import Path
-
 import numpy as np
-
 from accuracy import Accuracy
 from tqdm import tqdm
-
 from pytorch.common.datasets_parsers.av_parser import AVDBParser
 
 
@@ -44,16 +38,57 @@ def calc_features(data):
         clip = data[i]
 
         rm_list = []
-        for sample in clip.data_samples:
-            pass
+        for i, sample in enumerate(clip.data_samples):
+            if i % 2 != 0:
+                continue
 
-            # TODO: придумайте способы вычисления признаков по изображению с использованием ключевых точек
-            # используйте библиотеку OpenCV
+            dist = []
+            lm_ref = sample.landmarks[30]  # точка на носу
+            # Расчет расстояний от точки на носу до всех остальных точек
+            for j in range(len(sample.landmarks)):
+                lm = sample.landmarks[j]
+                dist.append(np.sqrt((lm_ref[0] - lm[0]) ** 2 + (lm_ref[1] - lm[1]) ** 2))
+
+            # Угол между носом и горизонтальными границами губ
+            vec1 = np.array(sample.landmarks[48]) - np.array(sample.landmarks[30])
+            vec2 = np.array(sample.landmarks[54]) - np.array(sample.landmarks[30])
+            mouth_nose_angle = np.arccos(
+                np.clip(np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)), -1.0, 1.0))
+
+            # Угол между подбородком и границами губ
+            vec3 = np.array(sample.landmarks[48]) - np.array(sample.landmarks[8])
+            vec4 = np.array(sample.landmarks[54]) - np.array(sample.landmarks[8])
+            mouth_chin_angle = np.arccos(
+                np.clip(np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)), -1.0, 1.0))
+
+            # Расстояние между вертикальными границами губ
+            mouth_distance_vert = np.sqrt((sample.landmarks[51][0] - sample.landmarks[57][0]) ** 2 +
+                                     (sample.landmarks[51][1] - sample.landmarks[57][1]) ** 2)
+
+            # Расстояние между горизонтальными границами губ
+            mouth_distance_hor = np.sqrt((sample.landmarks[48][0] - sample.landmarks[54][0]) ** 2 +
+                                     (sample.landmarks[48][1] - sample.landmarks[54][1]) ** 2)
+
+            # Расстояние между точками на глазах и горизонтальными границами губ (лево)
+            eye_mouth_distance_1 = np.sqrt((sample.landmarks[36][0] - sample.landmarks[48][0]) ** 2 +
+                                         (sample.landmarks[36][1] - sample.landmarks[48][1]) ** 2)
+
+            # Расстояние между точками на глазах и горизонтальными границами губ (право)
+            eye_mouth_distance_2 = np.sqrt((sample.landmarks[45][0] - sample.landmarks[54][0]) ** 2 +
+                                         (sample.landmarks[45][1] - sample.landmarks[54][1]) ** 2)
+
+
+
+            feat.append(dist + [mouth_nose_angle, mouth_chin_angle, mouth_distance_vert, mouth_distance_hor, eye_mouth_distance_1, eye_mouth_distance_2])
+            targets.append(sample.labels)
 
         for sample in rm_list:
             clip.data_samples.remove(sample)
 
-    print("feat count:", len(feat))
+    print("train frames count:", len(feat))
+    print("features count:", len(feat[1]))
+    print("targets count:", len(targets))
+
     return np.asarray(feat, dtype=np.float32), np.asarray(targets, dtype=np.float32)
 
 
@@ -79,35 +114,26 @@ if __name__ == "__main__":
     max_num_clips = 0  # загружайте только часть данных для отладки кода
     use_dump = False  # используйте dump для быстрой загрузки рассчитанных фич из файла
 
-    # dataset dir
-    base_dir = Path("/path/to/data")
+    base_dir = Path(r"C:\Users\zacep\Downloads\NeuralNetworksData\data.part1")
     if 1:
         train_dataset_root = base_dir / "Ryerson/Video"
         train_file_list = base_dir / "Ryerson/train_data_with_landmarks.txt"
+
         test_dataset_root = base_dir / "Ryerson/Video"
         test_file_list = base_dir / "Ryerson/test_data_with_landmarks.txt"
     else:
-        train_dataset_root = (
-            base_dir / "OMGEmotionChallenge-master/omg_TrainVideos/preproc/frames"
-        )
-        train_file_list = (
-            base_dir
-            / "OMGEmotionChallenge-master/omg_TrainVideos/preproc/train_data_with_landmarks.txt"
-        )
-        test_dataset_root = (
-            base_dir / "OMGEmotionChallenge-master/omg_ValidVideos/preproc/frames"
-        )
-        test_file_list = (
-            base_dir
-            / "OMGEmotionChallenge-master/omg_ValidVideos/preproc/valid_data_with_landmarks.txt"
-        )
+        train_dataset_root = base_dir / "OMGEmotionChallenge/omg_TrainVideos/frames"
+        train_file_list = base_dir / "OMGEmotionChallenge/omg_TrainVideos/train_data_with_landmarks.txt"
+
+        test_dataset_root = base_dir / "OMGEmotionChallenge/omg_ValidVideos/frames"
+        test_file_list = base_dir / "OMGEmotionChallenge/omg_ValidVideos/valid_data_with_landmarks.txt"
 
     if not use_dump:
-        # load dataset
+        # Загрузка датасета
         train_data = get_data(train_dataset_root, train_file_list, max_num_clips=0)
         test_data = get_data(test_dataset_root, test_file_list, max_num_clips=0)
 
-        # get features
+        # Вычисление признаков
         train_feat, train_targets = calc_features(train_data)
         test_feat, test_targets = calc_features(test_data)
 
@@ -117,11 +143,9 @@ if __name__ == "__main__":
         #    pickle.dump([train_feat, train_targets, test_feat, test_targets, accuracy_fn], f, protocol=2)
     else:
         with open(experiment_name + ".pickle", "rb") as f:
-            train_feat, train_targets, test_feat, test_targets, accuracy_fn = pickle.load(
-                f
-            )
+            train_feat, train_targets, test_feat, test_targets, accuracy_fn = pickle.load(f)
 
-    # run classifiers
+    # Выполнение классификации
     classification(
         train_feat,
         test_feat,

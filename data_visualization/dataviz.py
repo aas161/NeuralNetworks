@@ -56,11 +56,15 @@ def calc_features(data, draw: bool = True):
             mouth_distance_hor = np.sqrt((sample.landmarks[48][0] - sample.landmarks[54][0]) ** 2 +
                                      (sample.landmarks[48][1] - sample.landmarks[54][1]) ** 2)
 
-            # Расстояние между точками на глазах и границами губ
-            eye_mouth_distance = np.sqrt((sample.landmarks[36][0] - sample.landmarks[48][0]) ** 2 +
+            # Расстояние между точками на глазах и горизонтальными границами губ (лево)
+            eye_mouth_distance_1 = np.sqrt((sample.landmarks[36][0] - sample.landmarks[48][0]) ** 2 +
+                                         (sample.landmarks[36][1] - sample.landmarks[48][1]) ** 2)
+
+            # Расстояние между точками на глазах и горизонтальными границами губ (право)
+            eye_mouth_distance_2 = np.sqrt((sample.landmarks[45][0] - sample.landmarks[54][0]) ** 2 +
                                          (sample.landmarks[45][1] - sample.landmarks[54][1]) ** 2)
 
-            feat.append(dist + [mouth_nose_angle, mouth_distance_vert, mouth_distance_hor, eye_mouth_distance])
+            feat.append(dist + [mouth_nose_angle, mouth_distance_vert, mouth_distance_hor, eye_mouth_distance_1, eye_mouth_distance_2])
             targets.append(sample.labels)
 
             if draw:
