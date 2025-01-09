@@ -77,9 +77,16 @@ def calc_features(data):
             eye_mouth_distance_2 = np.sqrt((sample.landmarks[45][0] - sample.landmarks[54][0]) ** 2 +
                                          (sample.landmarks[45][1] - sample.landmarks[54][1]) ** 2)
 
+            # Расстояние между точками на бровях и глазах (лево)
+            eye_brow_distance_1 = np.sqrt((sample.landmarks[21][0] - sample.landmarks[39][0]) ** 2 +
+                                        (sample.landmarks[21][1] - sample.landmarks[39][1]) ** 2)
 
+            # Расстояние между точками на бровях и глазах (право)
+            eye_brow_distance_2 = np.sqrt((sample.landmarks[26][0] - sample.landmarks[45][0]) ** 2 +
+                                          (sample.landmarks[26][1] - sample.landmarks[45][1]) ** 2)
 
-            feat.append(dist + [mouth_nose_angle, mouth_chin_angle, mouth_distance_vert, mouth_distance_hor, eye_mouth_distance_1, eye_mouth_distance_2])
+            feat.append(dist + [mouth_nose_angle, mouth_chin_angle, mouth_distance_vert, mouth_distance_hor,
+                                eye_mouth_distance_1, eye_mouth_distance_2, eye_brow_distance_1, eye_brow_distance_2])
             targets.append(sample.labels)
 
         for sample in rm_list:
