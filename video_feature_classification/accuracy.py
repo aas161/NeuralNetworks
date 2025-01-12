@@ -1,16 +1,12 @@
 import matplotlib
-
 matplotlib.use("Agg")
 import itertools
-
 from collections import Counter
-
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
-
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import f1_score, confusion_matrix, classification_report
 
 
 class Accuracy:
@@ -25,19 +21,11 @@ class Accuracy:
         self.target_clips = [clip.labels for clip in data]
         self.target_clips = np.asarray(self.target_clips, dtype=np.int32)
         self.target_names = sorted([str(int(l)) for l in Counter(self.target_all).keys()])
+        self.labels = ["Calm", "Happy", "Sad", "Angry", "Fearful", "Disgust", "Surprised"]
 
-    def plot_confusion_matrix(
-        self, cm, classes, normalize=False, title="Confusion matrix", cmap=plt.cm.Blues
-    ):
-        """This function prints and plots the confusion matrix.
-
-        Normalization can be applied by setting `normalize=True`.
-
-        """
+    def plot_confusion_matrix(self, cm, classes, normalize=False, title="Confusion matrix", cmap=plt.cm.Blues):
         if normalize:
             cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
-
-        print(title + "\n", cm)
 
         plt.imshow(cm, interpolation="nearest", cmap=cmap)
         plt.title(title)
@@ -61,38 +49,42 @@ class Accuracy:
         plt.ylabel("True label")
         plt.xlabel("Predicted label")
 
-    def calc_cnf_matrix(self, target, predict):
-        # Compute confusion matrix
+    def calc_cnf_matrix(self, target, predict, filename, title):
+        # Вычисление матрицы ошибок
         cnf_matrix = confusion_matrix(target, predict)
         np.set_printoptions(precision=2)
 
-        # Plot non-normalized confusion matrix
-        title = "Confusion matrix"
+        # Построение ненормализованной матрицы ошибок
         plt.figure()
-        self.plot_confusion_matrix(cnf_matrix, classes=self.target_names, title=title)
-        plt.savefig(self.experiment_name + "_" + title + ".png")
+        self.plot_confusion_matrix(cnf_matrix, classes=self.labels, title=title)
+        plt.savefig(self.experiment_name + "_" + filename + ".png")
 
-        # Plot normalized confusion matrix
-        title = "Normalized confusion matrix"
+        # Построение нормализованной матрицы ошибок
         plt.figure()
-        self.plot_confusion_matrix(
-            cnf_matrix, classes=self.target_names, normalize=True, title=title
-        )
-        plt.savefig(self.experiment_name + "_" + title + ".png")
+        self.plot_confusion_matrix(cnf_matrix, classes=self.labels, normalize=True, title=title + " " + "normalized")
+        plt.savefig(self.experiment_name + "_" + filename + "_" + "normalized" + ".png")
 
     def by_frames(self, predict):
+        filename = "cnf_matrix_frames"
+        title = "Confusion matrix by frames"
         predict = np.asarray(predict, np.int32)
+
         assert self.target_all.shape[0] == predict.shape[0], "Invalid predict!"
+        print("Classification report by frames:")
         print(
             classification_report(
                 self.target_all, predict, target_names=self.target_names
             )
         )
-        self.calc_cnf_matrix(self.target_all, predict)
+        print("F1-score by frames:", np.round(f1_score(self.target_all, predict, average="weighted"), 3), '\n')
+        self.calc_cnf_matrix(self.target_all, predict, filename, title)
 
     def by_clips(self, predict):
         predict_clips = []
         idx = 0
+        filename = "cnf_matrix_clips"
+        title = "Confusion matrix by clips"
+
         for smaple_per_clip in self.data:
             pred = predict[idx : idx + len(smaple_per_clip)]
             idx += len(smaple_per_clip)
@@ -100,14 +92,10 @@ class Accuracy:
 
         predict_clips = np.asarray(predict_clips, dtype=np.int32)
         assert self.target_clips.shape[0] == predict_clips.shape[0], "Invalid predict!"
-
-        print(
-            classification_report(
-                self.target_clips, predict_clips, target_names=self.target_names
-            )
-        )
-        self.calc_cnf_matrix(self.target_clips, predict_clips)
-
+        print("Classification report by clips:")
+        print(classification_report(self.target_clips, predict_clips, target_names=self.target_names))
+        print("F1-score by clips:", np.round(f1_score(self.target_clips, predict_clips, average="weighted"), 3), '\n')
+        self.calc_cnf_matrix(self.target_clips, predict_clips, filename, title)
 
 class AccuracyRegression:
     def __init__(self, data, threshold=0.1):
@@ -124,10 +112,12 @@ class AccuracyRegression:
         for k, name in enumerate(self.target_names):
             target = torch.from_numpy(self.target_clips[:, k])
             pred = torch.from_numpy(predict_clips[:, k])
+            # Точность как процент предсказаний, отклонение которых от истинных значений не превышает пороговое значение
             test_acc = torch.nonzero(
                 F.relu(-(target - pred).abs_() + self.threshold)
             ).size(0)
             test_acc *= 100 / self.target_clips.shape[0]
+            # Ошибка как разница между предсказанными и истинными значениями, превышающая пороговое значение
             test_err = F.relu((target - pred).abs_() - self.threshold)
             test_err = test_err[test_err.nonzero()]
             result.append(test_acc)
