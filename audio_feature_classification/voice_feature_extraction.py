@@ -1,7 +1,6 @@
 import os
 import re
 import subprocess
-
 import numpy as np
 import pandas as pd
 
@@ -72,7 +71,7 @@ class OpenSMILE:
         features = pd.read_csv(features_file, sep=";", index_col=None)
         ## get rid of useless column
         features.drop("name", axis=1, inplace=True)
-        ## force the indexes to be equal so they will concat into 1 row. WTF, pandas?
+        ## force the indexes to be equal so they will concat into 1 row
         features = np.transpose(features.values[0])
 
         if os.path.exists(features_file):

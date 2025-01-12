@@ -1,17 +1,12 @@
 import matplotlib
-
 matplotlib.use("Agg")
-
 import itertools
-
 from collections import Counter
-
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
-
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import f1_score, confusion_matrix, classification_report
 
 
 class Accuracy:
@@ -20,22 +15,12 @@ class Accuracy:
         self.experiment_name = experiment_name
         self.target_clips = [clip.labels for clip in data]
         self.target_clips = np.asarray(self.target_clips, dtype=np.int32)
-        self.target_names = sorted(
-            [str(int(l)) for l in Counter(self.target_clips).keys()]
-        )
+        self.target_names = sorted([str(int(l)) for l in Counter(self.target_clips).keys()])
+        self.labels = ["Calm", "Happy", "Sad", "Angry", "Fearful", "Disgust", "Surprised"]
 
-    def plot_confusion_matrix(
-        self, cm, classes, normalize=False, title="Confusion matrix", cmap=plt.cm.Blues
-    ):
-        """This function prints and plots the confusion matrix.
-
-        Normalization can be applied by setting `normalize=True`.
-
-        """
+    def plot_confusion_matrix(self, cm, classes, normalize=False, title="Confusion matrix", cmap=plt.cm.Blues):
         if normalize:
             cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
-
-        print(title + "\n", cm)
 
         plt.imshow(cm, interpolation="nearest", cmap=cmap)
         plt.title(title)
@@ -59,26 +44,24 @@ class Accuracy:
         plt.ylabel("True label")
         plt.xlabel("Predicted label")
 
-    def calc_cnf_matrix(self, target, predict):
+    def calc_cnf_matrix(self, target, predict, classifier):
         # Compute confusion matrix
         cnf_matrix = confusion_matrix(target, predict)
         np.set_printoptions(precision=2)
 
         # Plot non-normalized confusion matrix
-        title = "Confusion matrix"
+        title = "Confusion matrix" + " " + classifier
         plt.figure()
-        self.plot_confusion_matrix(cnf_matrix, classes=self.target_names, title=title)
+        self.plot_confusion_matrix(cnf_matrix, classes=self.labels, title=title)
         plt.savefig(self.experiment_name + "_" + title + ".png")
 
         # Plot normalized confusion matrix
-        title = "Normalized confusion matrix"
+        title = "Normalized confusion matrix" + " " + classifier
         plt.figure()
-        self.plot_confusion_matrix(
-            cnf_matrix, classes=self.target_names, normalize=True, title=title
-        )
+        self.plot_confusion_matrix(cnf_matrix, classes=self.labels, normalize=True, title=title)
         plt.savefig(self.experiment_name + "_" + title + ".png")
 
-    def by_clips(self, predict):
+    def by_clips(self, predict, classifier):
         predict_clips = np.asarray(predict, dtype=np.int32)
         assert self.target_clips.shape[0] == predict_clips.shape[0], "Invalid predict!"
 
@@ -87,7 +70,8 @@ class Accuracy:
                 self.target_clips, predict_clips, target_names=self.target_names
             )
         )
-        self.calc_cnf_matrix(self.target_clips, predict_clips)
+        print("F1-score by frames:", np.round(f1_score(self.target_clips, predict_clips, average="weighted"), 3), '\n')
+        self.calc_cnf_matrix(self.target_clips, predict_clips, classifier)
 
 
 class AccuracyRegression:
