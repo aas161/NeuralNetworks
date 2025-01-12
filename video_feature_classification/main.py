@@ -13,8 +13,14 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+from sklearn.svm import SVR
+from sklearn.linear_model import LinearRegression
+
 
 def get_data(dataset_root, file_list, max_num_clips=0, max_num_samples=50):
+    """Загрузка данных из датасета"""
+
     dataset_parser = AVDBParser(
         dataset_root,
         os.path.join(dataset_root, file_list),
@@ -40,7 +46,7 @@ def calc_features(data):
     for clip_idx in progresser:
         clip = data[clip_idx]
 
-        # Сохраняем признаки предыдущего кадра, чтобы вычислить дельту
+        # Сохраняем признаки предыдущего и следующего кадров, чтобы вычислить дельту
         prev_vector = None
 
         for i, sample in enumerate(clip.data_samples):
@@ -97,15 +103,69 @@ def calc_features(data):
                 eye_brow_distance_r
             ] + dist
 
-            # Вычисляем дельту между текущим и предыдущим кадром (если prev_vector доступен)
+            # Вычисляем дельту между текущим и предыдущим кадром
             if prev_vector is not None:
-                delta_features = [cur - prev for cur, prev in zip(current_features, prev_vector)]
+                delta_features_prev = [cur - prev for cur, prev in zip(current_features, prev_vector)]
             else:
                 # Если это первый кадр в клипе, дельты нет, ставим нули
-                delta_features = [0.0] * len(current_features)
+                delta_features_prev = [0.0] * len(current_features)
 
-            # Объединяем оба набора признаков: базовые + временные
-            combined_features = current_features + delta_features
+            # Вычисляем признаки следующего кадра
+            if i + 1 < len(clip.data_samples):
+                next_sample = clip.data_samples[i + 1]
+                next_dist = []
+                next_lm_ref = next_sample.landmarks[30]
+                for j in range(len(next_sample.landmarks)):
+                    lm = next_sample.landmarks[j]
+                    next_dist.append(sqrt((next_lm_ref[0] - lm[0]) ** 2 + (next_lm_ref[1] - lm[1]) ** 2))
+
+                next_vec1 = np.array(next_sample.landmarks[48]) - np.array(next_sample.landmarks[30])
+                next_vec2 = np.array(next_sample.landmarks[54]) - np.array(next_sample.landmarks[30])
+                next_mouth_nose_angle = np.arccos(
+                    np.clip(np.dot(next_vec1, next_vec2) / (np.linalg.norm(next_vec1) * np.linalg.norm(next_vec2)), -1.0, 1.0)
+                )
+
+                next_vec3 = np.array(next_sample.landmarks[48]) - np.array(next_sample.landmarks[8])
+                next_vec4 = np.array(next_sample.landmarks[54]) - np.array(next_sample.landmarks[8])
+                next_mouth_chin_angle = np.arccos(
+                    np.clip(np.dot(next_vec3, next_vec4) / (np.linalg.norm(next_vec3) * np.linalg.norm(next_vec4)), -1.0, 1.0)
+                )
+
+                next_mouth_distance_vert = sqrt((next_sample.landmarks[51][0] - next_sample.landmarks[57][0]) ** 2 +
+                                                (next_sample.landmarks[51][1] - next_sample.landmarks[57][1]) ** 2)
+
+                next_mouth_distance_hor = sqrt((next_sample.landmarks[48][0] - next_sample.landmarks[54][0]) ** 2 +
+                                               (next_sample.landmarks[48][1] - next_sample.landmarks[54][1]) ** 2)
+
+                next_eye_mouth_distance_l = sqrt((next_sample.landmarks[36][0] - next_sample.landmarks[48][0]) ** 2 +
+                                                 (next_sample.landmarks[36][1] - next_sample.landmarks[48][1]) ** 2)
+                next_eye_mouth_distance_r = sqrt((next_sample.landmarks[45][0] - next_sample.landmarks[54][0]) ** 2 +
+                                                 (next_sample.landmarks[45][1] - next_sample.landmarks[54][1]) ** 2)
+
+                next_eye_brow_distance_l = sqrt((next_sample.landmarks[19][0] - next_sample.landmarks[37][0]) ** 2 +
+                                                (next_sample.landmarks[19][1] - next_sample.landmarks[37][1]) ** 2)
+                next_eye_brow_distance_r = sqrt((next_sample.landmarks[24][0] - next_sample.landmarks[44][0]) ** 2 +
+                                                (next_sample.landmarks[24][1] - next_sample.landmarks[44][1]) ** 2)
+
+                next_features = [
+                    next_mouth_nose_angle,
+                    next_mouth_chin_angle,
+                    next_mouth_distance_vert,
+                    next_mouth_distance_hor,
+                    next_eye_mouth_distance_l,
+                    next_eye_mouth_distance_r,
+                    next_eye_brow_distance_l,
+                    next_eye_brow_distance_r
+                ] + next_dist
+
+                # Вычисляем дельту между следующим и текущим кадром
+                delta_features_next = [nx - cur for nx, cur in zip(next_features, current_features)]
+            else:
+                # Если это последний кадр в клипе, дельты нет, ставим нули
+                delta_features_next = [0.0] * len(current_features)
+
+            # Объединяем все признаки: базовые, дельты текущего и предыдущего, дельты текущего и следующего
+            combined_features = current_features + delta_features_prev + delta_features_next
 
             feat.append(combined_features)
             targets.append(sample.labels)
@@ -117,13 +177,15 @@ def calc_features(data):
     print("Feature dimension per frame:", len(feat[0]))
     return np.asarray(feat, dtype=np.float32), np.asarray(targets, dtype=np.float32)
 
-def classification(X_train, X_test, y_train, y_test, accuracy_fn, pca_dim: int = 0):
+def classification_rf(X_train, X_test, y_train, y_test, accuracy_fn, pca_dim: int = 0):
+    """Классификация с использованием Random Forest"""
+
     # Перемешивание данных
     combined = list(zip(X_train, y_train))
     random.shuffle(combined)
     X_train[:], y_train[:] = zip(*combined)
 
-    # Стандартизация признаков
+    # Стандартизация признаков (удаление среднего значения и масштабирование дисперсии до единицы)
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
@@ -134,25 +196,68 @@ def classification(X_train, X_test, y_train, y_test, accuracy_fn, pca_dim: int =
         X_train = pca.fit_transform(X_train)
         X_test = pca.transform(X_test)
 
-    # Сетка гиперпараметров для RandomForest
+    # Сетка гиперпараметров для перекрестной проверки
     param_grid = {
-        'n_estimators': [50, 100],
-        'max_depth': [None, 10, 20],
-        'min_samples_split': [2, 5]
+        'n_estimators': [2000], # количество деревьев
+        'max_depth': [None, 5, 10, 20, 30], # максимальная глубина дерева
+        'min_samples_split': [20, 30, 50] # мин количество образцов, требуемых для разделения узла
     }
 
-    # GridSearchCV для подбора параметров
+    # Перекрестный поиск по сетки параметров для подбора лучших значений
     rf = RandomForestClassifier(random_state=42)
     grid_search = GridSearchCV(rf, param_grid, cv=3, scoring='f1_macro', n_jobs=-1)
     grid_search.fit(X_train, y_train)
 
     print("Best parameters found:", grid_search.best_params_)
-    print("Best cross-validation score (F1):", grid_search.best_score_)
+    print("Best cross-validation score (F1):", np.round(grid_search.best_score_, 2), '\n')
 
-    # Итоговый классификатор с лучшими параметрами
+    # Предсказание с итоговым классификатором
     best_rf = grid_search.best_estimator_
     y_pred = best_rf.predict(X_test)
 
+    # Вычисление метрик по кадрам и клипам
+    accuracy_fn.by_frames(y_pred)
+    accuracy_fn.by_clips(y_pred)
+
+def classification_svm(X_train, X_test, y_train, y_test, accuracy_fn, pca_dim: int = 0):
+    """Классификация с использованием SVM"""
+
+    # Перемешивание данных
+    combined = list(zip(X_train, y_train))
+    random.shuffle(combined)
+    X_train[:], y_train[:] = zip(*combined)
+
+    # Стандартизация признаков (удаление среднего значения и масштабирование дисперсии до единицы)
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # Сокращение размерности признаков
+    if pca_dim > 0:
+        pca = PCA(n_components=pca_dim, random_state=42)
+        X_train = pca.fit_transform(X_train)
+        X_test = pca.transform(X_test)
+
+    # Сетка гиперпараметров для перекрестной проверки
+    param_grid = {
+        'C': [0.1, 1, 10, 100], # параметр регуляризации
+        'gamma': [1, 0.1, 0.01, 0.001], # коэффициент ядра RBF
+        'kernel': ['rbf'] # используем RBF ядро
+    }
+
+    # Перекрестный поиск по сетки параметров для подбора лучших значений
+    svm = SVC(random_state=42)
+    grid_search = GridSearchCV(svm, param_grid, cv=3, scoring='f1_macro', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    print("Best parameters found:", grid_search.best_params_)
+    print("Best cross-validation score (F1):", np.round(grid_search.best_score_, 2), '\n')
+
+    # Предсказание с итоговым классификатором
+    best_svm = grid_search.best_estimator_
+    y_pred = best_svm.predict(X_test)
+
+    # Вычисление метрик по кадрам и клипам
     accuracy_fn.by_frames(y_pred)
     accuracy_fn.by_clips(y_pred)
 
@@ -196,12 +301,23 @@ if __name__ == "__main__":
         with open(experiment_name + ".pickle", "rb") as f:
             train_feat, train_targets, test_feat, test_targets, accuracy_fn = pickle.load(f)
 
-    # Выполнение классификации
-    classification(
+    # Выполнение классификации с Random Forest
+    classification_rf(
         train_feat,
         test_feat,
         train_targets,
         test_targets,
         accuracy_fn=accuracy_fn,
-        pca_dim=50,
+        pca_dim=100,
     )
+
+    # Выполнение классификации с SVM
+    classification_svm(
+        train_feat,
+        test_feat,
+        train_targets,
+        test_targets,
+        accuracy_fn=accuracy_fn,
+        pca_dim=100,
+    )
+
