@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from math import sqrt
 from accuracy import Accuracy
+from accuracy import AccuracyRegression
 from tqdm import tqdm
 from pytorch.common.datasets_parsers.av_parser import AVDBParser
 from sklearn.decomposition import PCA
@@ -34,7 +35,7 @@ def get_data(dataset_root, file_list, max_num_clips=0, max_num_samples=50):
     print("frames count:", dataset_parser.get_dataset_size())
     return data
 
-def calc_features(data):
+def calc_features(data, is_regression):
     progresser = tqdm(
         iterable=range(0, len(data)),
         desc="calc video features",
@@ -168,7 +169,11 @@ def calc_features(data):
             combined_features = current_features + delta_features_prev + delta_features_next
 
             feat.append(combined_features)
-            targets.append(sample.labels)
+
+            if is_regression:
+                targets.append([sample.valence, sample.arousal])
+            else:
+                targets.append(sample.labels)
 
             # Обновляем prev_vector
             prev_vector = current_features
@@ -198,7 +203,7 @@ def classification_rf(X_train, X_test, y_train, y_test, accuracy_fn, pca_dim: in
 
     # Сетка гиперпараметров для перекрестной проверки
     param_grid = {
-        'n_estimators': [2000], # количество деревьев
+        'n_estimators': [500, 1000, 2000], # количество деревьев
         'max_depth': [None, 5, 10, 20, 30], # максимальная глубина дерева
         'min_samples_split': [20, 30, 50] # мин количество образцов, требуемых для разделения узла
     }
@@ -261,11 +266,101 @@ def classification_svm(X_train, X_test, y_train, y_test, accuracy_fn, pca_dim: i
     accuracy_fn.by_frames(y_pred)
     accuracy_fn.by_clips(y_pred)
 
+def aggregate_predictions_by_clips(data, predictions):
+    """Агрегирование предсказаний по клипам"""
+
+    aggregated_predictions = []
+    idx = 0
+    for clip in data:
+        clip_predictions = predictions[idx:idx + len(clip.data_samples)]
+        aggregated_predictions.append(np.mean(clip_predictions, axis=0))
+        idx += len(clip.data_samples)
+    return np.array(aggregated_predictions)
+
+def regression_svr(X_train, X_test, y_train, y_test, data, accuracy_fn, pca_dim: int = 0):
+    """Регрессия с использованием SVR"""
+
+    # Перемешивание данных
+    combined = list(zip(X_train, y_train))
+    random.shuffle(combined)
+    X_train[:], y_train[:] = zip(*combined)
+    y_train = np.array(y_train)
+
+    # Стандартизация признаков (удаление среднего значения и масштабирование дисперсии до единицы)
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # Сокращение размерности признаков
+    if pca_dim > 0:
+        pca = PCA(n_components=pca_dim, random_state=42)
+        X_train = pca.fit_transform(X_train)
+        X_test = pca.transform(X_test)
+
+    # Регрессия для valence
+    svr_valence = SVR(kernel='rbf', C=1.0, gamma='scale')
+    svr_valence.fit(X_train, y_train[:, 0])
+    y_pred_valence = svr_valence.predict(X_test)
+
+    # Регрессия для arousal
+    svr_arousal = SVR(kernel='rbf', C=1.0, gamma='scale')
+    svr_arousal.fit(X_train, y_train[:, 1])
+    y_pred_arousal = svr_arousal.predict(X_test)
+
+    # Объединение предсказаний по valence и arousal
+    y_pred = np.column_stack((y_pred_valence, y_pred_arousal))
+
+    # Агрегирование предсказаний по клипам
+    y_pred_aggregated = aggregate_predictions_by_clips(data, y_pred)
+
+    # Вычисление метрик по клипам
+    accuracy_fn.by_clips(y_test, y_pred_aggregated)
+
+def regression_linear(X_train, X_test, y_train, y_test, data, accuracy_fn, pca_dim: int = 0):
+    """Регрессия с использованием Линейной Регрессии"""
+
+    # Перемешивание данных
+    combined = list(zip(X_train, y_train))
+    random.shuffle(combined)
+    X_train[:], y_train[:] = zip(*combined)
+    y_train = np.array(y_train)
+
+    # Стандартизация признаков (удаление среднего значения и масштабирование дисперсии до единицы)
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # Сокращение размерности признаков
+    if pca_dim > 0:
+        pca = PCA(n_components=pca_dim, random_state=42)
+        X_train = pca.fit_transform(X_train)
+        X_test = pca.transform(X_test)
+
+    # Регрессия для valence
+    lr_valence = LinearRegression()
+    lr_valence.fit(X_train, y_train[:, 0])
+    y_pred_valence = lr_valence.predict(X_test)
+
+    # Регрессия для arousal
+    lr_arousal = LinearRegression()
+    lr_arousal.fit(X_train, y_train[:, 1])
+    y_pred_arousal = lr_arousal.predict(X_test)
+
+    # Объединение предсказаний по valence и arousal
+    y_pred = np.column_stack((y_pred_valence, y_pred_arousal))
+
+    # Агрегирование предсказаний по клипам
+    y_pred_aggregated = aggregate_predictions_by_clips(data, y_pred)
+
+    # Вычисление метрик по клипам
+    accuracy_fn.by_clips(y_test, y_pred_aggregated)
+
 if __name__ == "__main__":
 
     experiment_name = "exp_09_01_2025"
     max_num_clips = 0
-    use_dump = True  # dump для быстрой загрузки из файла
+    use_dump = False  # dump для быстрой загрузки из файла
+    is_regression = False  # регрессия или классификация
 
     base_dir = Path(r"C:\Users\zacep\Downloads\NeuralNetworksData\data.part1")
     if 1:
@@ -287,11 +382,12 @@ if __name__ == "__main__":
         test_data = get_data(test_dataset_root, test_file_list, max_num_clips=0)
 
         # Вычисление признаков
-        train_feat, train_targets = calc_features(train_data)
-        test_feat, test_targets = calc_features(test_data)
+        train_feat, train_targets = calc_features(train_data, is_regression=is_regression)
+        test_feat, test_targets = calc_features(test_data, is_regression=is_regression)
 
         # Создание объекта для расчета метрик
-        accuracy_fn = Accuracy(test_data, experiment_name=experiment_name)
+        accuracy_fn = Accuracy(test_data, experiment_name=experiment_name) # классификация
+        # accuracy_fn = AccuracyRegression(test_data) # регрессия
 
         # Сохранение рассчитанных признаков на диск
         with open(experiment_name + '.pickle', 'wb') as f:
@@ -302,6 +398,7 @@ if __name__ == "__main__":
             train_feat, train_targets, test_feat, test_targets, accuracy_fn = pickle.load(f)
 
     # Выполнение классификации с Random Forest
+    print("Classification using Random Forest:")
     classification_rf(
         train_feat,
         test_feat,
@@ -312,11 +409,36 @@ if __name__ == "__main__":
     )
 
     # Выполнение классификации с SVM
+    print("Classification using Support Vector Machine:")
     classification_svm(
         train_feat,
         test_feat,
         train_targets,
         test_targets,
+        accuracy_fn=accuracy_fn,
+        pca_dim=100,
+    )
+
+    # Выполнение регрессии с использованием SVR
+    print("Regression using SVR:")
+    regression_svr(
+        train_feat,
+        test_feat,
+        train_targets,
+        test_targets,
+        test_data,  # Передаем тестовые данные для агрегирования предсказаний
+        accuracy_fn=accuracy_fn,
+        pca_dim=100,
+    )
+
+    # Выполнение регрессии с использованием Линейной Регрессии
+    print("Regression using Linear Regression:")
+    regression_linear(
+        train_feat,
+        test_feat,
+        train_targets,
+        test_targets,
+        test_data,  # Передаем тестовые данные для агрегирования предсказаний
         accuracy_fn=accuracy_fn,
         pca_dim=100,
     )

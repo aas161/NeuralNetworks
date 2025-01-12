@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix, classification_report
+from sklearn.metrics import f1_score, confusion_matrix, classification_report
 
 
 class Accuracy:
@@ -112,10 +112,12 @@ class AccuracyRegression:
         for k, name in enumerate(self.target_names):
             target = torch.from_numpy(self.target_clips[:, k])
             pred = torch.from_numpy(predict_clips[:, k])
+            # Точность как процент предсказаний, отклонение которых от истинных значений не превышает пороговое значение
             test_acc = torch.nonzero(
                 F.relu(-(target - pred).abs_() + self.threshold)
             ).size(0)
             test_acc *= 100 / self.target_clips.shape[0]
+            # Ошибка как разница между предсказанными и истинными значениями, превышающая пороговое значение
             test_err = F.relu((target - pred).abs_() - self.threshold)
             test_err = test_err[test_err.nonzero()]
             result.append(test_acc)
