@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 
 
 class TorchImageProcessor:
-    """Simple data processors."""
+    """Загрузка, обрезка и аугментация изображений"""
 
     def __init__(
         self,
